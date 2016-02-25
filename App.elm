@@ -2,6 +2,7 @@ module MyApp (..) where
 
 import Html exposing (..)
 import Html.Events exposing (onClick, on, targetValue)
+import Effects exposing (Never, Effects)
 import Html.Attributes exposing (disabled, value)
 import String
 import Http
@@ -10,6 +11,7 @@ import Json.Decode.Extra exposing ((|:))
 import Graphics.Element exposing (..)
 import Task exposing (Task, andThen, onError)
 import Debug
+import StartApp
 
 
 type alias Model =
@@ -20,16 +22,9 @@ type alias Model =
 
 
 type Action
-  = NewGithubPerson Person
+  = NewGithubPerson (Maybe Person)
   | GetGithubData
   | UpdateInput String
-  | HttpError String
-  | NoOp
-
-
-actions : Signal.Mailbox Action
-actions =
-  Signal.mailbox NoOp
 
 
 initialModel : Model
@@ -49,54 +44,30 @@ nullPerson =
   { login = "", reposCount = 0 }
 
 
-updateData : Person -> Task x ()
-updateData person =
-  Signal.send actions.address (NewGithubPerson person)
-
-
-errorMessage : Http.Error -> String
-errorMessage error =
-  case error of
-    Http.Timeout ->
-      "Timeout"
-
-    Http.NetworkError ->
-      "Network error"
-
-    Http.UnexpectedPayload _ ->
-      "Error decoding JSON"
-
-    Http.BadResponse code str ->
-      "Error: " ++ (toString code) ++ " " ++ str
-
-
-httpError : Http.Error -> Task () ()
-httpError error =
-  Signal.send actions.address (HttpError (errorMessage error))
-
-
-getGithubData : String -> Task () ()
+getGithubData : String -> Effects Action
 getGithubData name =
-  (Http.get jsonToPerson ("https://api.github.com/users/" ++ name)) `andThen` updateData `onError` httpError
+  Http.get jsonToPerson ("https://api.github.com/users/" ++ name)
+    |> Task.toMaybe
+    |> Task.map NewGithubPerson
+    |> Effects.task
 
 
-update : Action -> ( Model, Task () () ) -> ( Model, Task () () )
-update action ( model, _ ) =
+update : Action -> Model -> ( Model, Effects Action )
+update action model =
   case action of
-    NoOp ->
-      ( model, Task.succeed () )
-
-    HttpError str ->
-      ( { model | error = str }, Task.succeed () )
-
     UpdateInput string ->
-      ( { model | input = string }, Task.succeed () )
+      ( { model | input = string }, Effects.none )
 
     GetGithubData ->
       ( model, getGithubData model.input )
 
-    NewGithubPerson person ->
-      ( { model | person = person }, Task.succeed () )
+    NewGithubPerson maybePerson ->
+      case maybePerson of
+        Just person ->
+          ( { model | person = person }, Effects.none )
+
+        Nothing ->
+          ( model, Effects.none )
 
 
 jsonToPerson : Decoder Person
@@ -118,30 +89,24 @@ view address model =
     ]
 
 
-
--- SIGNALS AND PORTS
-
-
-modelAndTask : Signal ( Model, Task () () )
-modelAndTask =
-  Signal.foldp update ( initialModel, getGithubData initialModel.input ) actions.signal
+init : ( Model, Effects Action )
+init =
+  ( initialModel, getGithubData initialModel.input )
 
 
-taskSignal : Signal (Task () ())
-taskSignal =
-  Signal.map snd modelAndTask
+app =
+  StartApp.start
+    { init = init
+    , update = update
+    , view = view
+    , inputs = []
+    }
 
 
-modelSignal : Signal Model
-modelSignal =
-  Signal.map fst modelAndTask
-
-
-port tasks : Signal (Task () ())
+port tasks : Signal (Task Never ())
 port tasks =
-  taskSignal
+  app.tasks
 
 
-main : Signal Html
 main =
-  Signal.map (view actions.address) modelSignal
+  app.html
