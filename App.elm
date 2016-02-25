@@ -64,10 +64,10 @@ update action model =
     NewGithubPerson maybePerson ->
       case maybePerson of
         Just person ->
-          ( { model | person = person }, Effects.none )
+          ( { model | person = person, error = "" }, Effects.none )
 
         Nothing ->
-          ( model, Effects.none )
+          ( { model | error = "something went wrong getting data" }, Effects.none )
 
 
 jsonToPerson : Decoder Person
