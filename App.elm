@@ -9,7 +9,6 @@ import Json.Decode as JD exposing ((:=), Decoder)
 import Json.Decode.Extra exposing ((|:))
 import Graphics.Element exposing (..)
 import Task exposing (Task, andThen)
-import Debug
 
 
 type alias Model =
