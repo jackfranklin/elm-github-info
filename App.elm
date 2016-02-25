@@ -22,7 +22,7 @@ type alias Model =
 
 
 type Action
-  = NewGithubPerson (Maybe Person)
+  = NewGithubPerson (Result Http.Error Person)
   | GetGithubData
   | UpdateInput String
 
@@ -44,10 +44,26 @@ nullPerson =
   { login = "", reposCount = 0 }
 
 
+errorMessage : Http.Error -> String
+errorMessage error =
+  case error of
+    Http.Timeout ->
+      "Timeout"
+
+    Http.NetworkError ->
+      "Network error"
+
+    Http.UnexpectedPayload _ ->
+      "Error decoding JSON"
+
+    Http.BadResponse code str ->
+      "Error: " ++ (toString code) ++ " " ++ str
+
+
 getGithubData : String -> Effects Action
 getGithubData name =
   Http.get jsonToPerson ("https://api.github.com/users/" ++ name)
-    |> Task.toMaybe
+    |> Task.toResult
     |> Task.map NewGithubPerson
     |> Effects.task
 
@@ -63,11 +79,11 @@ update action model =
 
     NewGithubPerson maybePerson ->
       case maybePerson of
-        Just person ->
+        Ok person ->
           ( { model | person = person, error = "" }, Effects.none )
 
-        Nothing ->
-          ( { model | error = "something went wrong getting data" }, Effects.none )
+        Err err ->
+          ( { model | error = (errorMessage err) }, Effects.none )
 
 
 jsonToPerson : Decoder Person
