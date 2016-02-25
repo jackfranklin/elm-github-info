@@ -8,12 +8,14 @@ import Http
 import Json.Decode as JD exposing ((:=), Decoder)
 import Json.Decode.Extra exposing ((|:))
 import Graphics.Element exposing (..)
-import Task exposing (Task, andThen)
+import Task exposing (Task, andThen, onError)
+import Debug
 
 
 type alias Model =
   { person : Person
   , input : String
+  , error : String
   }
 
 
@@ -21,6 +23,7 @@ type Action
   = NewGithubPerson Person
   | GetGithubData
   | UpdateInput String
+  | HttpError String
   | NoOp
 
 
@@ -33,6 +36,7 @@ initialModel : Model
 initialModel =
   { person = nullPerson
   , input = "jackfranklin"
+  , error = ""
   }
 
 
@@ -50,9 +54,30 @@ updateData person =
   Signal.send actions.address (NewGithubPerson person)
 
 
+errorMessage : Http.Error -> String
+errorMessage error =
+  case error of
+    Http.Timeout ->
+      "Timeout"
+
+    Http.NetworkError ->
+      "Network error"
+
+    Http.UnexpectedPayload _ ->
+      "Error decoding JSON"
+
+    Http.BadResponse code str ->
+      "Error: " ++ (toString code) ++ " " ++ str
+
+
+httpError : Http.Error -> Task () ()
+httpError error =
+  Signal.send actions.address (HttpError (errorMessage error))
+
+
 getGithubData : String -> Task () ()
 getGithubData name =
-  (silenceTask (Http.get jsonToPerson ("https://api.github.com/users/" ++ name))) `andThen` updateData
+  (Http.get jsonToPerson ("https://api.github.com/users/" ++ name)) `andThen` updateData `onError` httpError
 
 
 update : Action -> ( Model, Task () () ) -> ( Model, Task () () )
@@ -60,6 +85,9 @@ update action ( model, _ ) =
   case action of
     NoOp ->
       ( model, Task.succeed () )
+
+    HttpError str ->
+      ( { model | error = str }, Task.succeed () )
 
     UpdateInput string ->
       ( { model | input = string }, Task.succeed () )
@@ -86,6 +114,7 @@ view address model =
     , input [ on "input" targetValue (\str -> Signal.message address (UpdateInput str)), value model.input ] []
     , div [] [ text model.person.login ]
     , div [] [ text ("Repo Count: " ++ (toString model.person.reposCount)) ]
+    , div [] [ text model.error ]
     ]
 
 
@@ -103,12 +132,6 @@ taskSignal =
   Signal.map snd modelAndTask
 
 
-silenceTask : Task x a -> Task () a
-silenceTask task =
-  task
-    |> Task.mapError (\_ -> ())
-
-
 modelSignal : Signal Model
 modelSignal =
   Signal.map fst modelAndTask
@@ -122,14 +145,3 @@ port tasks =
 main : Signal Html
 main =
   Signal.map (view actions.address) modelSignal
-
-
-
--- main : Element
--- main =
---   myJson
---     |> JD.decodeString jsonToPerson
---     |> Result.toMaybe
---     |> Maybe.withDefault nullPerson
---     |> .name
---     |> show
