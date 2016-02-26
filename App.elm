@@ -8,9 +8,7 @@ import String
 import Http
 import Json.Decode as JD exposing ((:=), Decoder)
 import Json.Decode.Extra exposing ((|:))
-import Graphics.Element exposing (..)
 import Task exposing (Task, andThen, onError)
-import Debug
 import StartApp
 
 
@@ -110,6 +108,7 @@ init =
   ( initialModel, getGithubData initialModel.input )
 
 
+app : StartApp.App Model
 app =
   StartApp.start
     { init = init
@@ -124,5 +123,6 @@ port tasks =
   app.tasks
 
 
+main : Signal Html
 main =
   app.html
